@@ -1,0 +1,7 @@
+{
+   "context": "..",
+   "dockerFile": "../Dockerfile",
+   "extensions": [
+      "golang.go"
+   ]
+ }
