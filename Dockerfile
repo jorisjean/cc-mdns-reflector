@@ -4,7 +4,7 @@ FROM golang:1
 # See https://code.visualstudio.com/docs/remote/containers-advanced#_reducing-dockerfile-build-warnings.
 ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update \
-    && apt-get -y install --no-install-recommends apt-utils 2>&1
+    && apt-get -y install --no-install-recommends apt-utils  libpcap-dev 2>&1
 
 # Verify git, process tools, lsb-release (common in install instructions for CLIs) installed.
 RUN apt-get -y install git iproute2 procps lsb-release

@@ -1,33 +1,68 @@
 package main
 
 import (
-    "encoding/json"
-    "fmt"
-    "io/ioutil"
-    "os"
-	"net"
+	"encoding/json"
+	"errors"
+	"io/ioutil"
 	"log"
+	"net"
+	"os"
+
+	"gopkg.in/ini.v1"
 )
 
 
-type CcClientMapRead struct {
-	CcIp		string	`json:"cc_ip"`
+type CcClientRead struct {
 	CcMac		string	`json:"cc_mac"`
-	ClientIp	string	`json:"client_ip"`
 	ClientMac	string	`json:"client_mac"`
 }
 
-type CcClientMap struct {
-	CcIp		net.IP				`json:"cc_ip"`
-	CcMac		net.HardwareAddr	`json:"cc_mac"`
-	ClientIp	net.IP				`json:"client_ip"`
-	ClientMac	net.HardwareAddr	`json:"client_mac"`
+
+type MrConfig struct {
+	capInt		string
+	ccSubnetIP	net.IP
+	ccVlan		int
+	clientVlan	int
 }
 
-func LoadCcClientMaps(file_path string) ([]CcClientMap){
+func LoadConfig(filePath string) (MrConfig){
+	msg := "Error while parsing confing file " + filePath + ": %v"
+
+	cfg, err := ini.Load(filePath)
+	if err != nil {
+        log.Fatalf(msg, err)
+    }
+
+	ccVlan, err := cfg.Section("mdns-reflector").Key("chromecast_vlan").Int()
+	if err != nil {
+        log.Fatalf(msg, err)
+    }
+
+	clientVlan, err := cfg.Section("mdns-reflector").Key("client_vlan").Int()
+	if err != nil {
+        log.Fatalf(msg, err)
+    }
+
+	capInt := cfg.Section("mdns-reflector").Key("mdns_reflector_int").String()
+	if len(capInt) == 0 {
+		err := errors.New("Missing mdns_reflector_int value")
+		log.Fatalf(msg, err)
+	}
+
+	ip := cfg.Section("mdns-reflector").Key("chromecast_spoof_ip").String()
+	ccSubnetIP := net.ParseIP(ip)
+	if ccSubnetIP == nil {
+		err := errors.New("Invalid IP in config file chromecast_spoof_ip=" + ip)
+		log.Fatalf(msg, err)
+	}
+
+	return MrConfig{capInt, ccSubnetIP, ccVlan, clientVlan}
+}
+
+func LoadCcClientMappings(filePath string) (map[string]string, map[string]string){
 
 	// We read the file
-    jsonFile, err := os.Open(file_path)
+    jsonFile, err := os.Open(filePath)
 
     if err != nil {
         log.Fatal(err)
@@ -36,50 +71,30 @@ func LoadCcClientMaps(file_path string) ([]CcClientMap){
     defer jsonFile.Close()
     byteValue, _ := ioutil.ReadAll(jsonFile)
 
-    var CcClientMapsRead []CcClientMapRead
-    json.Unmarshal(byteValue, &CcClientMapsRead)
+    var CcClientRead []CcClientRead
+    json.Unmarshal(byteValue, &CcClientRead)
 
-	var ccClientMaps []CcClientMap
+	ccToClient := make(map[string]string)
+	clientToCc := make(map[string]string)
 	// Only complete mappings (cc mac, cc ip, client mac, client ip) are returned
-	for _, ccClientMapRead := range CcClientMapsRead {
-		if ccClientMapRead.CcMac != "" && ccClientMapRead.ClientMac != "" && ccClientMapRead.CcIp != "" && ccClientMapRead.ClientIp != "" {
+	for _, ccClientRead := range CcClientRead {
+		if ccClientRead.CcMac != "" && ccClientRead.ClientMac != "" {
 			// Parsing MAC to make sure they are valid
-			ccMac, err := net.ParseMAC(ccClientMapRead.CcMac)
+			ccMac, err := net.ParseMAC(ccClientRead.CcMac)
 			if err != nil {
-				log.Println("Invalid CC MAC: " + ccClientMapRead.CcMac)
+				log.Println("Invalid CC MAC: " + ccClientRead.CcMac)
 				continue
 			}
-			clientMac, err := net.ParseMAC(ccClientMapRead.ClientMac)
+			clientMac, err := net.ParseMAC(ccClientRead.ClientMac)
 			if err != nil {
-				log.Println("Invalid Client MAC: " + ccClientMapRead.ClientMac)
+				log.Println("Invalid Client MAC: " + ccClientRead.ClientMac)
 				continue
 			}
-			// Parsing IP to make sure they are valid
-			ccIp := net.ParseIP(ccClientMapRead.CcIp)
-			if ccIp == nil {
-				log.Println("Invalid CC MAC: " + ccClientMapRead.CcIp)
-				continue
-			}
-			clientIp := net.ParseIP(ccClientMapRead.ClientIp)
-			if clientIp == nil {
-				log.Println("Invalid CC MAC: " + ccClientMapRead.ClientIp)
-				continue
-			}
-			ccClientMap := CcClientMap{ccIp, ccMac, clientIp, clientMac}
-			ccClientMaps = append(ccClientMaps, ccClientMap)
+			ccToClient[ccMac.String()] = clientMac.String()
+			clientToCc[clientMac.String()] = ccMac.String()
 		}
     }
 
-	return ccClientMaps
+	return ccToClient, clientToCc
 
-}
-
-func main() {
-	mappings := LoadCcClientMaps("test.json")
-	for _, mapping := range mappings {
-		fmt.Println("CC IP: " + mapping.CcIp.String())
-		fmt.Println("CC MAC: " + mapping.CcMac.String())
-		fmt.Println("Client IP: " + mapping.ClientIp.String())
-		fmt.Println("Client MAC: " + mapping.ClientMac.String())
-	}
 }
