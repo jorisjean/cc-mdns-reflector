@@ -72,7 +72,7 @@ func main() {
 			if err != nil{
 				continue
 			}
-			sendMdnsPacket(rawTraffic, &mdnsPacket, uint16(config.ccVlan), brMACAddress, config.ccSubnetIP, true, ccMAC)
+			sendMdnsPacket(rawTraffic, &mdnsPacket, uint16(config.ccVlan), brMACAddress, ccMAC, config.ccSubnetIP)
 		// Forward the mDNS response to the appropriate Client
 		} else {
 			clientMacString, ok := ccToClient[mdnsPacket.srcMAC.String()]
@@ -83,7 +83,7 @@ func main() {
 			if err != nil{
 				continue
 			}
-			sendMdnsPacket(rawTraffic, &mdnsPacket, uint16(config.clientVlan), brMACAddress, *mdnsPacket.srcIP, false, clientMac)
+			sendMdnsPacket(rawTraffic, &mdnsPacket, uint16(config.clientVlan), brMACAddress, clientMac, nil)
 		}
 	}
 }

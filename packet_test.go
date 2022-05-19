@@ -17,6 +17,7 @@ var (
 	brMACTest           = net.HardwareAddr{0xF2, 0xAA, 0xFA, 0xAA, 0xFF, 0xAA}
 	vlanIdentifierTest  = uint16(30)
 	srcIPv4Test         = net.IP{127, 0, 0, 1}
+	srcIPv4SpoofTest    = net.IP{192, 168, 1, 100}
 	dstIPv4Test         = net.IP{224, 0, 0, 251}
 	srcIPv6Test         = net.ParseIP("::1")
 	dstIPv6Test         = net.ParseIP("ff02::fb")
@@ -27,14 +28,18 @@ var (
 	spoofAddrTest       = net.IP{192, 168, 1, 1}
 )
 
-func createMockmDNSPacket(isIPv4 bool, isDNSQuery bool) []byte {
-	if isIPv4 {
-		return createRawPacket(isIPv4, isDNSQuery, vlanIdentifierTest, dstIPv4Test, srcMACTest, dstMACTest, dstUDPPortTest)
-	}
-	return createRawPacket(isIPv4, isDNSQuery, vlanIdentifierTest, dstIPv6Test, srcMACTest, dstMACTest, dstUDPPortTest)
+func createMockmDNSPacket(isDNSQuery bool) []byte {
+	return createRawPacket( isDNSQuery, vlanIdentifierTest, srcIPv4Test, dstIPv4Test, srcMACTest, dstMACTest, dstUDPPortTest)
 }
 
-func createRawPacket(isIPv4 bool, isDNSQuery bool, vlanTag uint16, dstIP net.IP, srcMAC net.HardwareAddr, dstMAC net.HardwareAddr, dstPort layers.UDPPort) []byte {
+func createRawPacket(
+	isDNSQuery bool,
+	vlanTag uint16,
+	srcIP net.IP,
+	dstIP net.IP,
+	srcMAC net.HardwareAddr,
+	dstMAC net.HardwareAddr,
+	dstPort layers.UDPPort) []byte {
 	var ethernetLayer, dot1QLayer, ipLayer, udpLayer, dnsLayer gopacket.SerializableLayer
 
 	ethernetLayer = &layers.Ethernet{
@@ -43,34 +48,19 @@ func createRawPacket(isIPv4 bool, isDNSQuery bool, vlanTag uint16, dstIP net.IP,
 		EthernetType: layers.EthernetTypeDot1Q,
 	}
 
-	if isIPv4 {
-		dot1QLayer = &layers.Dot1Q{
-			VLANIdentifier: vlanTag,
-			Type:           layers.EthernetTypeIPv4,
-		}
+	dot1QLayer = &layers.Dot1Q{
+		VLANIdentifier: vlanTag,
+		Type:           layers.EthernetTypeIPv4,
+	}
 
-		ipLayer = &layers.IPv4{
-			SrcIP:    srcIPv4Test,
-			DstIP:    dstIP,
-			Version:  4,
-			Protocol: layers.IPProtocolUDP,
-			Length:   146,
-			IHL:      5,
-			TOS:      0,
-		}
-	} else {
-		dot1QLayer = &layers.Dot1Q{
-			VLANIdentifier: vlanTag,
-			Type:           layers.EthernetTypeIPv6,
-		}
-
-		ipLayer = &layers.IPv6{
-			SrcIP:      srcIPv6Test,
-			DstIP:      dstIP,
-			Version:    6,
-			Length:     48,
-			NextHeader: layers.IPProtocolUDP,
-		}
+	ipLayer = &layers.IPv4{
+		SrcIP:    srcIP,
+		DstIP:    dstIP,
+		Version:  4,
+		Protocol: layers.IPProtocolUDP,
+		Length:   146,
+		IHL:      5,
+		TOS:      0,
 	}
 
 	udpLayer = &layers.UDP{
@@ -118,7 +108,7 @@ func TestParseEthernetLayer(t *testing.T) {
 	decoder := gopacket.DecodersByLayerName["Ethernet"]
 	options := gopacket.DecodeOptions{Lazy: true}
 
-	packet := gopacket.NewPacket(createMockmDNSPacket(true, true), decoder, options)
+	packet := gopacket.NewPacket(createMockmDNSPacket(true), decoder, options)
 
 	expectedResult1, expectedResult2 := &srcMACTest, &dstMACTest
 	computedResult1, computedResult2 := parseEthernetLayer(packet)
@@ -131,7 +121,7 @@ func TestParseVLANTag(t *testing.T) {
 	decoder := gopacket.DecodersByLayerName["Ethernet"]
 	options := gopacket.DecodeOptions{Lazy: true}
 
-	packet := gopacket.NewPacket(createMockmDNSPacket(true, true), decoder, options)
+	packet := gopacket.NewPacket(createMockmDNSPacket(true), decoder, options)
 
 	expectedLayer := &layers.Dot1Q{
 		VLANIdentifier: vlanIdentifierTest,
@@ -148,20 +138,11 @@ func TestParseIPLayer(t *testing.T) {
 	decoder := gopacket.DecodersByLayerName["Ethernet"]
 	options := gopacket.DecodeOptions{Lazy: true}
 
-	isIPv4 := true
-	ipv4Packet := gopacket.NewPacket(createMockmDNSPacket(isIPv4, true), decoder, options)
+	ipv4Packet := gopacket.NewPacket(createMockmDNSPacket(true), decoder, options)
 
 	computedIsIPv6, srcIP := parseIPLayer(ipv4Packet)
 	if computedIsIPv6 == true || srcIP == nil {
 		t.Error("Error in parseIPLayer() for IPv4 addresses")
-	}
-
-	isIPv4 = false
-	ipv6Packet := gopacket.NewPacket(createMockmDNSPacket(isIPv4, true), decoder, options)
-
-	computedIsIPv6, srcIP = parseIPLayer(ipv6Packet)
-	if computedIsIPv6 == false || srcIP == nil {
-		t.Error("Error in parseIPLayer() for IPv6 addresses")
 	}
 }
 
@@ -169,7 +150,7 @@ func TestParseUDPLayer(t *testing.T) {
 	decoder := gopacket.DecodersByLayerName["Ethernet"]
 	options := gopacket.DecodeOptions{Lazy: true}
 
-	packet := gopacket.NewPacket(createMockmDNSPacket(true, true), decoder, options)
+	packet := gopacket.NewPacket(createMockmDNSPacket(true), decoder, options)
 
 	questionPacketPayload := parseUDPLayer(packet)
 	if !reflect.DeepEqual(questionPayloadTest, questionPacketPayload) {
@@ -181,7 +162,7 @@ func TestParseDNSPayload(t *testing.T) {
 	decoder := gopacket.DecodersByLayerName["Ethernet"]
 	options := gopacket.DecodeOptions{Lazy: true}
 
-	questionPacket := gopacket.NewPacket(createMockmDNSPacket(true, true), decoder, options)
+	questionPacket := gopacket.NewPacket(createMockmDNSPacket(true), decoder, options)
 
 	questionPacketPayload := parseUDPLayer(questionPacket)
 
@@ -191,7 +172,7 @@ func TestParseDNSPayload(t *testing.T) {
 		t.Error("Error in parseDNSPayload() for DNS queries")
 	}
 
-	answerPacket := gopacket.NewPacket(createMockmDNSPacket(true, false), decoder, options)
+	answerPacket := gopacket.NewPacket(createMockmDNSPacket(false), decoder, options)
 
 	answerPacketPayload := parseUDPLayer(answerPacket)
 
@@ -229,7 +210,7 @@ func createMockPacketSource() (packetSource *gopacket.PacketSource, packet gopac
 	// send one legitimate packet
 	// Return the packetSource and the legitimate packet
 	data := [][]byte{
-		createMockmDNSPacket(true, true)}
+		createMockmDNSPacket(true)}
 	dataSource := &dataSource{
 		sentPackets: 0,
 		data:        data,
@@ -278,7 +259,7 @@ func (pw *mockPacketWriter) WritePacketData(bytes []byte) (err error) {
 
 func TestSendMdnsPacket(t *testing.T) {
 	// Craft a test packet
-	initialDataIPv4 := createMockmDNSPacket(true, true)
+	initialDataIPv4 := createMockmDNSPacket(true)
 	decoder := gopacket.DecodersByLayerName["Ethernet"]
 	initialPacketIPv4 := gopacket.NewPacket(initialDataIPv4, decoder, gopacket.DecodeOptions{Lazy: true})
 
@@ -296,20 +277,25 @@ func TestSendMdnsPacket(t *testing.T) {
 
 	newVlanTag := uint16(29)
 
-	expectedDstMACv4 := net.HardwareAddr{0x01, 0x00, 0x5E, 0x00, 0x00, 0xFB}
-	expectedDataIPv4 := createRawPacket(true, true, newVlanTag, dstIPv4Test, brMACTest, expectedDstMACv4, dstUDPPortTest)
+	// Test without changing the source IP
+	expectedDstMACv4 := net.HardwareAddr{0x01, 0x02, 0x03, 0x04, 0x05, 0x06}
+	expectedDataIPv4 := createRawPacket(true, newVlanTag, srcIPv4Test, dstIPv4Test, brMACTest, expectedDstMACv4, dstUDPPortTest)
 	expectedPacketIPv4 := gopacket.NewPacket(expectedDataIPv4, decoder, gopacket.DecodeOptions{Lazy: true})
-
 
 	pw := &mockPacketWriter{packet: nil}
 
-	sendMdnsPacket(pw, &mdnsTestPacketIPv4, newVlanTag, brMACTest, spoofAddrTest, false, dstMACTest)
+	sendMdnsPacket(pw, &mdnsTestPacketIPv4, newVlanTag, brMACTest, expectedDstMACv4, nil)
 	if !reflect.DeepEqual(expectedPacketIPv4.Layers(), pw.packet.Layers()) {
 		t.Error("Error in sendMdnsPacket() for IPv4")
 	}
 
+	// Test with changing the source IP
+	expectedDstMACv4 = net.HardwareAddr{0x01, 0x02, 0x03, 0x04, 0x05, 0x06}
+	expectedDataIPv4 = createRawPacket(true, newVlanTag, srcIPv4Test, dstIPv4Test, brMACTest, expectedDstMACv4, dstUDPPortTest)
+	expectedPacketIPv4 = gopacket.NewPacket(expectedDataIPv4, decoder, gopacket.DecodeOptions{Lazy: true})
+
 	// When we change the src IP address of mDNS Query we expect the IPv4 layer to be different
-	sendMdnsPacket(pw, &mdnsTestPacketIPv4, newVlanTag, brMACTest, spoofAddrTest, true, dstMACTest)
+	sendMdnsPacket(pw, &mdnsTestPacketIPv4, newVlanTag, brMACTest, dstMACTest, spoofAddrTest)
 	if reflect.DeepEqual(expectedPacketIPv4.Layers(), pw.packet.Layers()) {
 		t.Error("Error in sendMdnsPacket() for IPv4 with spoof address")
 	}

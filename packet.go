@@ -108,9 +108,8 @@ func sendMdnsPacket(
 	mdnsPacket *mdnsPacket,
 	tag uint16,
 	brMACAddress net.HardwareAddr,
-	srcIPAddress net.IP,
-	spoofsrcIP bool,
-	dstMACAddress net.HardwareAddr) {
+	dstMACAddress net.HardwareAddr,
+	srcIPAddress net.IP) {
 
 	// Change the VLAN Tag
 	*mdnsPacket.vlanTag = tag
@@ -124,7 +123,7 @@ func sendMdnsPacket(
 
 	// We change the Source IP address of the mDNS query since Chromecasts ignore
 	// packets coming from outside their subnet.
-	if spoofsrcIP{
+	if srcIPAddress != nil{
 		serializeOptions = gopacket.SerializeOptions{ComputeChecksums: true}
 		*mdnsPacket.srcIP = srcIPAddress
 		// We recalculate the checksum since the IP was modified
