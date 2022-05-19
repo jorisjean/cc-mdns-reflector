@@ -7,9 +7,23 @@ import (
 	"net"
 	"time"
 
+	"os/signal"
+	"os"
+	"syscall"
+
 	"github.com/google/gopacket"
 	"github.com/google/gopacket/pcap"
 )
+
+var (
+	ccToClient map[string]string
+	clientToCc map[string]string
+)
+
+func loadStates(statesPath string){
+	ccToClient, clientToCc = LoadCcClientMappings(statesPath)
+	fmt.Println(ccToClient, clientToCc)
+}
 
 
 func main() {
@@ -19,11 +33,25 @@ func main() {
 	debug := flag.Bool("debug", false, "Enable console debugs")
 	flag.Parse()
 
-	ccToClient, clientToCc := LoadCcClientMappings(*statesPath)
-	fmt.Println(ccToClient, clientToCc)
-
+	// Load config
 	config := LoadConfig(*configPath)
 	fmt.Println(config)
+
+	// Load states
+	loadStates(*statesPath)
+
+	// Listen for system reload call
+	sigs := make(chan os.Signal)
+	signal.Notify(sigs, syscall.SIGHUP)
+
+	// Reload state file when receiving a HUP
+	go func(){
+		for sig := range sigs {
+			fmt.Printf("Got A HUP Signal (%v) Reloading States....\n", sig.String())
+			loadStates(*statesPath)
+		}
+		return
+	}()
 
 	// Get a handle on the network interface
 	rawTraffic, err := pcap.OpenLive(config.capInt, 65536, true, time.Second)
